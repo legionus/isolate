@@ -22,6 +22,7 @@ int verbose = 0;
 int unshare_flags = 0;
 int uid = -1;
 int gid = -1;
+char *rootdir = NULL;
 
 static void usage(int code)
 {
@@ -31,6 +32,7 @@ static void usage(int code)
 	        "Utility allows to isolate process inside predefined environment.\n"
 	        "\n"
 	        "Options:\n"
+	        " -R, --root=DIR        run the command with root directory set to DIR\n"
 	        " -U, --unshare=LIST    list of namespaces that must be unshared\n"
 	        " -u, --user=UID        set uid in entered namespace\n"
 	        " -g, --group=GID       set gid in entered namespace\n"
@@ -56,7 +58,7 @@ static void print_version_and_exit(void)
 
 static int parse_arguments(int argc, char **argv)
 {
-	const char short_opts[] = "vVhU:u:g:";
+	const char short_opts[] = "vVhU:u:g:R:";
 	const struct option long_opts[] = {
 		{ "help", no_argument, NULL, 'h' },
 		{ "verbose", no_argument, NULL, 'v' },
@@ -64,12 +66,16 @@ static int parse_arguments(int argc, char **argv)
 		{ "unshare", required_argument, NULL, 'U' },
 		{ "user", required_argument, NULL, 'u' },
 		{ "group", required_argument, NULL, 'g' },
+		{ "root", required_argument, NULL, 'R' },
 		{ NULL, 0, NULL, 0 }
 	};
 	int c;
 
 	while ((c = getopt_long(argc, argv, short_opts, long_opts, NULL)) != EOF) {
 		switch (c) {
+			case 'R':
+				rootdir = optarg;
+				break;
 			case 'U':
 				if (parse_unshare_namespaces(&unshare_flags, optarg) < 0)
 					return -1;
@@ -184,6 +190,17 @@ static int main_child(int sock, char **argv)
 
 	if (prctl(PR_SET_PDEATHSIG, SIGKILL) < 0)
 		err(EX_OSERR, "prctl(PR_SET_PDEATHSIG)");
+
+	const char *cwd = NULL;
+
+	if (rootdir) {
+		if (chroot(rootdir) < 0)
+			err(EX_SOFTWARE, "chroot: %s", rootdir);
+		cwd = "/";
+	}
+
+	if (cwd && chdir(cwd) < 0)
+		err(EX_SOFTWARE, "chdir: %s", cwd);
 
 	if (gid >= 0 && setregid((gid_t) gid, (gid_t) gid) < 0)
 		err(EX_SOFTWARE, "setregid");
