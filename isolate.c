@@ -5,8 +5,10 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <getopt.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include <sched.h> // CLONE_*
 #include <sysexits.h>
 #include <errno.h>
@@ -23,6 +25,7 @@ int unshare_flags = 0;
 int uid = -1;
 int gid = -1;
 char *rootdir = NULL;
+FILE *envfile = NULL;
 
 static void usage(int code)
 {
@@ -32,6 +35,7 @@ static void usage(int code)
 	        "Utility allows to isolate process inside predefined environment.\n"
 	        "\n"
 	        "Options:\n"
+	        " -E, --environ=FILE    set environment from file\n"
 	        " -R, --root=DIR        run the command with root directory set to DIR\n"
 	        " -U, --unshare=LIST    list of namespaces that must be unshared\n"
 	        " -u, --user=UID        set uid in entered namespace\n"
@@ -58,7 +62,7 @@ static void print_version_and_exit(void)
 
 static int parse_arguments(int argc, char **argv)
 {
-	const char short_opts[] = "vVhU:u:g:R:r:";
+	const char short_opts[] = "vVhU:u:g:R:r:E:";
 	const struct option long_opts[] = {
 		{ "help", no_argument, NULL, 'h' },
 		{ "verbose", no_argument, NULL, 'v' },
@@ -68,12 +72,20 @@ static int parse_arguments(int argc, char **argv)
 		{ "group", required_argument, NULL, 'g' },
 		{ "root", required_argument, NULL, 'R' },
 		{ "rlimit", required_argument, NULL, 'r' },
+		{ "envfile", required_argument, NULL, 'E' },
 		{ NULL, 0, NULL, 0 }
 	};
 	int c;
 
 	while ((c = getopt_long(argc, argv, short_opts, long_opts, NULL)) != EOF) {
 		switch (c) {
+			case 'E':
+				envfile = fopen(optarg, "r");
+				if (!envfile) {
+					warn("open: %s", optarg);
+					return -1;
+				}
+				break;
 			case 'R':
 				rootdir = optarg;
 				break;
@@ -109,6 +121,47 @@ static int parse_arguments(int argc, char **argv)
 	}
 
 	return 0;
+}
+
+static void setup_environ(void)
+{
+	if (!envfile)
+		return;
+
+	clearenv();
+
+	if (verbose)
+		warnx("loading environment variables from file");
+
+	ssize_t n;
+	size_t len = 0;
+	char *str = NULL;
+	int nline = 0;
+
+	while ((n = getline(&str, &len, envfile)) != -1) {
+		char *name, *value;
+
+		if (str[n - 1] == '\n')
+			str[n - 1] = '\0';
+
+		name = str;
+		nline++;
+
+		while (name && isspace(name[0]))
+			name++;
+
+		if (name[0] == '#')
+			continue;
+
+		if (!(value = strchr(name, '=')))
+			continue;
+
+		*value++ = '\0';
+
+		setenv(name, value, 1);
+	}
+
+	free(str);
 }
 
 static int main_parent(int sock, pid_t helper_pid)
@@ -213,6 +266,7 @@ static int main_child(int sock, char **argv)
 	if (uid >= 0 && setreuid((uid_t) uid, (uid_t) uid) < 0)
 		err(EX_SOFTWARE, "setreuid");
 
+	setup_environ();
 	cloexec_fds();
 	change_rlimits();
 
