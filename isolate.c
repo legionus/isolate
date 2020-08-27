@@ -58,7 +58,7 @@ static void print_version_and_exit(void)
 
 static int parse_arguments(int argc, char **argv)
 {
-	const char short_opts[] = "vVhU:u:g:R:";
+	const char short_opts[] = "vVhU:u:g:R:r:";
 	const struct option long_opts[] = {
 		{ "help", no_argument, NULL, 'h' },
 		{ "verbose", no_argument, NULL, 'v' },
@@ -67,6 +67,7 @@ static int parse_arguments(int argc, char **argv)
 		{ "user", required_argument, NULL, 'u' },
 		{ "group", required_argument, NULL, 'g' },
 		{ "root", required_argument, NULL, 'R' },
+		{ "rlimit", required_argument, NULL, 'r' },
 		{ NULL, 0, NULL, 0 }
 	};
 	int c;
@@ -78,6 +79,10 @@ static int parse_arguments(int argc, char **argv)
 				break;
 			case 'U':
 				if (parse_unshare_namespaces(&unshare_flags, optarg) < 0)
+					return -1;
+				break;
+			case 'r':
+				if (parse_rlimits(optarg) < 0)
 					return -1;
 				break;
 			case 'u':
@@ -209,6 +214,7 @@ static int main_child(int sock, char **argv)
 		err(EX_SOFTWARE, "setreuid");
 
 	cloexec_fds();
+	change_rlimits();
 
 	execvp(argv[0], argv);
 	warn("execvp");

@@ -10,7 +10,7 @@ CFLAGS = \
 
 CPPFLAGS = -std=gnu99 -D_GNU_SOURCE=1 -DVERSION=\"$(VERSION)\"
 
-SRCS = isolate.c caller.c fds.c ipc.c unshare.c
+SRCS = isolate.c caller.c fds.c ipc.c rlimit.c unshare.c
 DEPS = $(SRCS:.c=.d)
 OBJS = $(SRCS:.c=.o)
 

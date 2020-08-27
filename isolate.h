@@ -34,6 +34,10 @@ extern int ipc_pair(int sv[2]);
 extern int send_cmd(int fd, cmd_t cmd);
 extern cmd_t recv_cmd(int fd);
 
+/* rlimit.c */
+extern int parse_rlimits(char *value);
+extern void change_rlimits(void);
+
 /* unshare.c */
 extern int parse_unshare_namespaces(int *flags, const char *arg);
 extern int unshare_namespaces(const int flags);
