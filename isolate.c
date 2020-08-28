@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 #include <getopt.h>
 #include <fcntl.h>
 #include <ctype.h>
@@ -23,6 +24,7 @@ char *__progname;
 
 int verbose = 0;
 int unshare_flags = 0;
+int no_new_privs = 0;
 char *rootdir = NULL;
 FILE *envfile = NULL;
 
@@ -34,7 +36,10 @@ static void usage(int code)
 	        "Utility allows to isolate process inside predefined environment.\n"
 	        "\n"
 	        "Options:\n"
-	        " -E, --environ=FILE        set environment from file\n"
+#ifdef PR_SET_NO_NEW_PRIVS
+		" --no-new-privs            do not grant new privileges to do anything\n"
+#endif
+		" -E, --environ=FILE        set environment from file\n"
 	        " -R, --root=DIR            run the command with root directory set to DIR\n"
 	        " -U, --unshare=LIST        list of namespaces that must be unshared\n"
 	        " -u, --uid-mapping=VALUE   set uid map in entered namespace\n"
@@ -66,6 +71,9 @@ static void print_version_and_exit(void)
 
 static int parse_arguments(int argc, char **argv)
 {
+	enum {
+		OPT_NO_NEW_PRIVS = CHAR_MAX + 1
+	};
 	const char short_opts[] = "vVhU:u:g:R:r:E:";
 	const struct option long_opts[] = {
 		{ "help", no_argument, NULL, 'h' },
@@ -77,12 +85,16 @@ static int parse_arguments(int argc, char **argv)
 		{ "root", required_argument, NULL, 'R' },
 		{ "rlimit", required_argument, NULL, 'r' },
 		{ "envfile", required_argument, NULL, 'E' },
+		{ "no-new-privs", no_argument, NULL, OPT_NO_NEW_PRIVS },
 		{ NULL, 0, NULL, 0 }
 	};
 	int c;
 
 	while ((c = getopt_long(argc, argv, short_opts, long_opts, NULL)) != EOF) {
 		switch (c) {
+			case OPT_NO_NEW_PRIVS:
+				no_new_privs = 1;
+				break;
 			case 'E':
 				envfile = fopen(optarg, "r");
 				if (!envfile) {
@@ -261,6 +273,15 @@ static int main_child(int sock, char **argv)
 
 	if (cwd && chdir(cwd) < 0)
 		err(EX_SOFTWARE, "chdir: %s", cwd);
+
+#ifdef PR_SET_NO_NEW_PRIVS /* in prctl.h since Linux 3.5 */
+	if (no_new_privs) {
+		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0)
+			err(EX_SOFTWARE, "prctl(PR_SET_NO_NEW_PRIVS)");
+		if (verbose)
+			warnx("set no new privileges");
+	}
+#endif
 
 	setup_environ();
 	cloexec_fds();
