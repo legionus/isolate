@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 #ifndef _ISOLATE_H_
 #define _ISOLATE_H_
 
