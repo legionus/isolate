@@ -39,11 +39,11 @@ static void usage(int code)
 #ifdef PR_SET_NO_NEW_PRIVS
 		" --no-new-privs            do not grant new privileges to do anything\n"
 #endif
+	        " --uid-mapping=iID:oID:N   set uid map in entered namespace\n"
+	        " --gid-mapping=iID:oID:N   set gid map in entered namespace\n"
 		" -E, --environ=FILE        set environment from file\n"
 	        " -R, --root=DIR            run the command with root directory set to DIR\n"
 	        " -U, --unshare=LIST        list of namespaces that must be unshared\n"
-	        " -u, --uid-mapping=VALUE   set uid map in entered namespace\n"
-	        " -g, --gid-mapping=VALUE   set gid map in entered namespace\n"
 	        " -h, --help                display this help and exit\n"
 	        " -v, --verbose             print a message for each action\n"
 	        " -V, --version             output version information and exit\n"
@@ -72,16 +72,18 @@ static void print_version_and_exit(void)
 static int parse_arguments(int argc, char **argv)
 {
 	enum {
-		OPT_NO_NEW_PRIVS = CHAR_MAX + 1
+		OPT_NO_NEW_PRIVS = CHAR_MAX + 1,
+		OPT_UID_MAPPING,
+		OPT_GID_MAPPING,
 	};
-	const char short_opts[] = "vVhU:u:g:R:r:E:";
+	const char short_opts[] = "vVhU:R:r:E:";
 	const struct option long_opts[] = {
 		{ "help", no_argument, NULL, 'h' },
 		{ "verbose", no_argument, NULL, 'v' },
 		{ "version", no_argument, NULL, 'V' },
 		{ "unshare", required_argument, NULL, 'U' },
-		{ "uid-mapping", required_argument, NULL, 'u' },
-		{ "gid-mapping", required_argument, NULL, 'g' },
+		{ "uid-mapping", required_argument, NULL, OPT_UID_MAPPING },
+		{ "gid-mapping", required_argument, NULL, OPT_GID_MAPPING },
 		{ "root", required_argument, NULL, 'R' },
 		{ "rlimit", required_argument, NULL, 'r' },
 		{ "envfile", required_argument, NULL, 'E' },
@@ -113,11 +115,11 @@ static int parse_arguments(int argc, char **argv)
 				if (parse_rlimits(optarg) < 0)
 					return -1;
 				break;
-			case 'u':
+			case OPT_UID_MAPPING:
 				if (parse_uid_mapping(optarg) < 0)
 					return -1;
 				break;
-			case 'g':
+			case OPT_GID_MAPPING:
 				if (parse_gid_mapping(optarg) < 0)
 					return -1;
 				break;
