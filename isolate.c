@@ -22,8 +22,6 @@ char *__progname;
 
 int verbose = 0;
 int unshare_flags = 0;
-int uid = -1;
-int gid = -1;
 char *rootdir = NULL;
 FILE *envfile = NULL;
 
@@ -35,14 +33,19 @@ static void usage(int code)
 	        "Utility allows to isolate process inside predefined environment.\n"
 	        "\n"
 	        "Options:\n"
-	        " -E, --environ=FILE    set environment from file\n"
-	        " -R, --root=DIR        run the command with root directory set to DIR\n"
-	        " -U, --unshare=LIST    list of namespaces that must be unshared\n"
-	        " -u, --user=UID        set uid in entered namespace\n"
-	        " -g, --group=GID       set gid in entered namespace\n"
-	        " -h, --help            display this help and exit\n"
-	        " -v, --verbose         print a message for each action\n"
-	        " -V, --version         output version information and exit\n"
+	        " -E, --environ=FILE        set environment from file\n"
+	        " -R, --root=DIR            run the command with root directory set to DIR\n"
+	        " -U, --unshare=LIST        list of namespaces that must be unshared\n"
+	        " -u, --uid-mapping=VALUE   set uid map in entered namespace\n"
+	        " -g, --gid-mapping=VALUE   set gid map in entered namespace\n"
+	        " -h, --help                display this help and exit\n"
+	        " -v, --verbose             print a message for each action\n"
+	        " -V, --version             output version information and exit\n"
+		"\n"
+		"Map strings for -u and -g consist of records of the form:\n"
+		"    inside-id:outside-id:count\n"
+		"\n"
+		"These options can be specified multiple times.\n"
 	        "\n"
 	        "Report bugs to authors.\n"
 	        "\n");
@@ -68,8 +71,8 @@ static int parse_arguments(int argc, char **argv)
 		{ "verbose", no_argument, NULL, 'v' },
 		{ "version", no_argument, NULL, 'V' },
 		{ "unshare", required_argument, NULL, 'U' },
-		{ "user", required_argument, NULL, 'u' },
-		{ "group", required_argument, NULL, 'g' },
+		{ "uid-mapping", required_argument, NULL, 'u' },
+		{ "gid-mapping", required_argument, NULL, 'g' },
 		{ "root", required_argument, NULL, 'R' },
 		{ "rlimit", required_argument, NULL, 'r' },
 		{ "envfile", required_argument, NULL, 'E' },
@@ -98,10 +101,12 @@ static int parse_arguments(int argc, char **argv)
 					return -1;
 				break;
 			case 'u':
-				uid = atoi(optarg);
+				if (parse_uid_mapping(optarg) < 0)
+					return -1;
 				break;
 			case 'g':
-				gid = atoi(optarg);
+				if (parse_gid_mapping(optarg) < 0)
+					return -1;
 				break;
 			case 'h':
 				usage(EXIT_SUCCESS);
@@ -193,12 +198,8 @@ static int main_parent(int sock, pid_t helper_pid)
 	if (WEXITSTATUS(status) != EXIT_SUCCESS)
 		return WEXITSTATUS(status);
 
-	if ((unshare_flags & CLONE_NEWUSER) && (uid >= 0 || gid >= 0)) {
-		if (setgroups_control(pid, SETGROUPS_DENY) < 0 ||
-		    map_id(pid, "group", "gid_map", gid, caller_gid) < 0 ||
-		    map_id(pid, "user",  "uid_map", uid, caller_uid) < 0)
-			return EX_OSERR;
-	}
+	if ((unshare_flags & CLONE_NEWUSER) && apply_id_mappings(pid) < 0)
+		errx(EX_OSERR, NULL);
 
 	if (send_cmd(sock, CMD_EXEC) < 0)
 		errx(EX_IOERR, NULL);
@@ -259,12 +260,6 @@ static int main_child(int sock, char **argv)
 
 	if (cwd && chdir(cwd) < 0)
 		err(EX_SOFTWARE, "chdir: %s", cwd);
-
-	if (gid >= 0 && setregid((gid_t) gid, (gid_t) gid) < 0)
-		err(EX_SOFTWARE, "setregid");
-
-	if (uid >= 0 && setreuid((uid_t) uid, (uid_t) uid) < 0)
-		err(EX_SOFTWARE, "setreuid");
 
 	setup_environ();
 	cloexec_fds();

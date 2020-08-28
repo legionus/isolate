@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
 #include <err.h>
 #include <sched.h> // CLONE_*
 #include <fcntl.h>
@@ -109,16 +110,75 @@ int unshare_namespaces(const int flags)
 	return 0;
 }
 
-int map_id(pid_t pid, const char *type, const char *name,
-		const long from, const long to)
+char *uid_mapping = NULL;
+char *gid_mapping = NULL;
+
+int parse_mapping(char **mapping, char *value)
+{
+	int i = 0;
+	char *v;
+	char *p = value;
+
+	while (*p != 0) {
+		v = p;
+		errno = 0;
+		strtoul(v, &p, 10);
+
+		if (errno == ERANGE) {
+			warn("bad value: %s", value);
+			return -1;
+		}
+
+		if (*p != ':' && *p != 0) {
+			warnx("wrong delimiter '%c'", *p);
+			return -1;
+		}
+
+		if (*p == ':')
+			*p = ' ';
+
+		i++;
+	}
+
+	if (i != 3) {
+		warnx("wrong number of IDs: %d", i);
+		return -1;
+	}
+
+	if (*mapping) {
+		size_t len = strlen(*mapping);
+
+		v = *mapping = realloc(*mapping, len + 1 + strlen(value) + 1);
+		v += len;
+		*v++ = '\n';
+	} else {
+		v = *mapping = malloc(strlen(value) + 1);
+	}
+
+	strcpy(v, value);
+	return 0;
+}
+
+static int map_id(pid_t pid, const char *type, const char *name,
+		const char *mapping)
 {
 	int fd, rc = -1;
+	size_t map_len;
 
-	if (from < 0 || to < 0)
-		return 0;
-
-	if (verbose > 1)
-		warnx("remap %s %ld to %ld", type, from, to);
+	if (verbose > 1) {
+		const char *m  = mapping;
+		while (1) {
+			char *p = strchr(m, '\n');
+			if (p) {
+				p++;
+				warnx("remap %s %.*s", type, (int) (p - m - 1), m);
+				m = p;
+			} else {
+				warnx("remap %s %s", type, m);
+				break;
+			}
+		}
+	}
 
 	snprintf(filename, sizeof(filename), PROC_ROOT "/%d/%s", pid, name);
 
@@ -127,7 +187,9 @@ int map_id(pid_t pid, const char *type, const char *name,
 		goto end;;
 	}
 
-	if (dprintf(fd, "%ld %ld 1", from, to) < 0) {
+	map_len = strlen(mapping);
+
+	if (write(fd, mapping, map_len) != (ssize_t) map_len) {
 		warn("unable to write to %s", filename);
 		goto end;
 	}
@@ -138,7 +200,7 @@ end:
 	return rc;
 }
 
-int setgroups_control(pid_t pid, const int action)
+static int setgroups_control(pid_t pid, const int action)
 {
 	int rc = -1;
 
@@ -168,4 +230,34 @@ int setgroups_control(pid_t pid, const int action)
 end:
 	close(fd);
 	return rc;
+}
+
+int apply_id_mappings(pid_t pid)
+{
+	int rc;
+	char *mapping;
+	static char buf[1024];
+
+	if ((rc = setgroups_control(pid, SETGROUPS_DENY)) < 0)
+		return rc;
+
+	mapping = gid_mapping;
+
+	if (!mapping) {
+		snprintf(buf, sizeof(buf), "%d %d 1", caller_gid, caller_gid);
+		mapping = buf;
+	}
+	if ((rc = map_id(pid, "group", "gid_map", mapping)) < 0)
+		return rc;
+
+	mapping = uid_mapping;
+
+	if (!mapping) {
+		snprintf(buf, sizeof(buf), "%d %d 1", caller_uid, caller_uid);
+		mapping = buf;
+	}
+	if ((rc = map_id(pid, "user", "uid_map", mapping)) < 0)
+		return rc;
+
+	return 0;
 }

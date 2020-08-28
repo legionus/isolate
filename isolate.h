@@ -39,10 +39,22 @@ extern int parse_rlimits(char *value);
 extern void change_rlimits(void);
 
 /* unshare.c */
+extern char *uid_mapping;
+extern char *gid_mapping;
+
 extern int parse_unshare_namespaces(int *flags, const char *arg);
 extern int unshare_namespaces(const int flags);
-extern int map_id(pid_t pid, const char *type, const char *name,
-		const long from, const long to);
-extern int setgroups_control(pid_t pid, const int action);
+extern int parse_mapping(char **mapping, char *value);
+extern int apply_id_mappings(pid_t pid);
+
+static inline int parse_uid_mapping(char *value)
+{
+	return parse_mapping(&uid_mapping, value);
+}
+
+static inline int parse_gid_mapping(char *value)
+{
+	return parse_mapping(&gid_mapping, value);
+}
 
 #endif /* _ISOLATE_H_ */
